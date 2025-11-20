@@ -1,20 +1,33 @@
-# Maze Escape (Python + Pygame)
+🎮 Maze Escape (Python + Pygame)
 
-A completely free, beginner-friendly maze game. Move the player from **S** (start) to **E** (exit) without hitting walls.
+Simple and fun 2D maze game built with Python + Pygame.
+Choose your ghost (Pink or Blue) and reach the Exit (E) without hitting the walls.
 
-## Controls
-- Arrow Keys or WASD to move
-- R to restart the level
-- ESC to quit
+✨ Features
 
-## Run
-```bash
+5 playable levels
+
+2D outline cartoon style
+
+Smooth movement
+
+Character selection
+
+Timer + best-time saving
+
+Map loading from .txt files
+
+🕹️ Controls
+
+W A S D → Move
+
+R → Restart
+
+ESC → Quit
+
+🚀 Run the Game
 pip install -r requirements.txt
 python main.py
-```
 
-## Files
-- `main.py` – game logic
-- `maps/level1.txt` – the maze layout (you can edit this file to design your own)
-- `requirements.txt` – dependencies
-- `README.md` – this file
+
+Feyza Balaban 35458
