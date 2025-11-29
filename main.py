@@ -2,37 +2,59 @@ import pygame
 import sys
 import time
 import json
+import requests
 from collections import deque
 from pathlib import Path
 
 # ---------------------------
-# LEVEL DOSYALARI
+# LEVEL FILES
 # ---------------------------
 LEVELS = [
     Path("maps/level1.txt"),
     Path("maps/level2.txt"),
     Path("maps/level3.txt"),
     Path("maps/level4.txt"),
-    Path("maps/level5.txt")
+    Path("maps/level5.txt"),
 ]
 
 # ---------------------------
-# AYARLAR (2D OUTLINE STYLE)
+# SETTINGS (2D OUTLINE STYLE)
 # ---------------------------
 TILE_SIZE = 32
 FPS = 60
 
-BG_COLOR    = (20, 20, 28)      # Arkaplan
-FLOOR_COLOR = (35, 38, 55)      # Zemin
-WALL_COLOR  = (80, 90, 255)     # Duvar iç dolgu (mavi)
-EXIT_COLOR  = (0, 255, 140)     # Çıkış
-TEXT_COLOR  = (240, 240, 255)   # Yazı
+BG_COLOR    = (20, 20, 28)      # Background
+FLOOR_COLOR = (35, 38, 55)      # Floor
+WALL_COLOR  = (80, 90, 255)     # Wall fill (blue)
+EXIT_COLOR  = (0, 255, 140)     # Exit
+TEXT_COLOR  = (240, 240, 255)   # Text
 
-# Best time dosyası
+# Best time file
 BEST_FILE = Path("best_time.json")
 
+# n8n webhook URL (for score saving)
+WEBHOOK_URL = "https://feyzabalabann8n.app.n8n.cloud/webhook/maze-score"
+
+
+def send_score_to_server(player_name: str, score: float):
+    """
+    Send total game score to n8n webhook.
+    If there is an error, just log it to console and don't break the game.
+    """
+    try:
+        payload = {
+            "player_name": player_name,
+            "score": score,
+        }
+        # Small timeout so the game doesn't freeze if internet is down
+        requests.post(WEBHOOK_URL, json=payload, timeout=3)
+        print("Score sent to server:", payload)
+    except Exception as e:
+        print("Could not send score:", e)
+
+
 # ---------------------------
-# BEST TIME YÜKLE / KAYDET
+# LOAD / SAVE BEST TIMES
 # ---------------------------
 def load_best_times():
     if BEST_FILE.exists():
@@ -42,17 +64,19 @@ def load_best_times():
             return {}
     return {}
 
+
 def save_best_times(data: dict):
     try:
         BEST_FILE.write_text(
             json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8"
+            encoding="utf-8",
         )
     except Exception:
         pass
 
+
 # ---------------------------
-# HARİTA YÜKLEME
+# MAP LOADING
 # ---------------------------
 def load_map(path: Path):
     rows = []
@@ -79,8 +103,9 @@ def load_map(path: Path):
 
     return grid, start, exit_pos, width, height
 
+
 # ---------------------------
-# HARİTA ÇÖZÜLEBİLİR Mİ?
+# CAN WE REACH THE EXIT?
 # ---------------------------
 def path_exists(grid, start, exit_pos):
     H, W = len(grid), len(grid[0])
@@ -104,8 +129,9 @@ def path_exists(grid, start, exit_pos):
 
     return False
 
+
 # ---------------------------
-# HAREKET KONTROL
+# MOVEMENT CHECK
 # ---------------------------
 def can_move(grid, x, y):
     h = len(grid)
@@ -114,21 +140,23 @@ def can_move(grid, x, y):
         return False
     return grid[y][x] != "#"
 
+
 # ---------------------------
-# SPRITE YÜKLEME
+# LOAD PLAYER SPRITES
 # ---------------------------
 def load_player_sprites():
     raw = {
         "pink": pygame.image.load("ghost/pink_ghost.png").convert_alpha(),
-        "blue": pygame.image.load("ghost/blue_ghost.png").convert_alpha()
+        "blue": pygame.image.load("ghost/blue_ghost.png").convert_alpha(),
     }
     return {
         k: pygame.transform.smoothscale(img, (TILE_SIZE, TILE_SIZE))
         for k, img in raw.items()
     }
 
+
 # ---------------------------
-# KARAKTER SEÇİMİ
+# CHARACTER SELECTION
 # ---------------------------
 def choose_skin(screen, clock, font, sprites):
     msg_font = pygame.font.SysFont("arial", 32)
@@ -168,8 +196,9 @@ def choose_skin(screen, clock, font, sprites):
 
         pygame.display.flip()
 
+
 # ---------------------------
-# KISA FLASH EFEKTİ
+# SMALL FLASH EFFECT
 # ---------------------------
 def flash_effect(screen):
     w, h = screen.get_size()
@@ -181,26 +210,27 @@ def flash_effect(screen):
         screen.blit(overlay, (0, 0))
         pygame.display.flip()
         pygame.time.delay(80)
-        # hemen sonra geri çizebilmesi için sadece bekliyoruz
+
 
 # ---------------------------
-# LEVEL ÇALIŞTIRMA
+# RUN ONE LEVEL
 # ---------------------------
 def run_level(level_index, screen, clock, font, player_img, best_times):
     grid, start, exit_pos, width, height = load_map(LEVELS[level_index])
 
     if not path_exists(grid, start, exit_pos):
-        raise ValueError(f"Level {level_index+1} is not solvable.")
+        raise ValueError(f"Level {level_index + 1} is not solvable.")
 
     screen = pygame.display.set_mode((width * TILE_SIZE, height * TILE_SIZE))
-    pygame.display.set_caption(f"Maze Escape – Feyza (Level {level_index+1})")
+    pygame.display.set_caption(f"Maze Escape – Feyza (Level {level_index + 1})")
 
     player_x, player_y = start
     start_time = time.time()
     won = False
     win_time = None
+    level_elapsed = 0  # time for this level
 
-    level_key = f"level_{level_index+1}"
+    level_key = f"level_{level_index + 1}"
     prev_best = best_times.get(level_key)
 
     msg_font = pygame.font.SysFont("arial", 26)
@@ -211,12 +241,12 @@ def run_level(level_index, screen, clock, font, player_img, best_times):
 
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
-                return "quit"
+                return "quit", 0
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_ESCAPE:
-                    return "quit"
+                    return "quit", 0
                 if e.key == pygame.K_r:
-                    return "restart"
+                    return "restart", 0
 
         if not won:
             keys = pygame.key.get_pressed()
@@ -239,31 +269,33 @@ def run_level(level_index, screen, clock, font, player_img, best_times):
             if (player_x, player_y) == exit_pos:
                 won = True
                 win_time = time.time()
-                elapsed = int(win_time - start_time)
+                level_elapsed = int(win_time - start_time)
 
-                # best time kontrol
-                if (prev_best is None) or (elapsed < prev_best):
-                    best_times[level_key] = elapsed
+                # best time check
+                if (prev_best is None) or (level_elapsed < prev_best):
+                    best_times[level_key] = level_elapsed
                     save_best_times(best_times)
+                    prev_best = level_elapsed
                     new_record = True
 
-                # küçük flash efekti
+                # small flash effect
                 flash_effect(screen)
 
         if won and win_time is not None and time.time() - win_time > 1.0:
-            return "next"
+            return "next", level_elapsed
 
-        # --- Çizim ---
+        # --- Drawing ---
         screen.fill(BG_COLOR)
 
         for y, row in enumerate(grid):
             for x, ch in enumerate(row):
-                rect = pygame.Rect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                rect = pygame.Rect(x * TILE_SIZE, y * TILE_SIZE,
+                                   TILE_SIZE, TILE_SIZE)
 
                 if ch == "#":
-                    # 2D outline duvar
-                    pygame.draw.rect(screen, WALL_COLOR, rect)      # dolgu
-                    pygame.draw.rect(screen, (0, 0, 0), rect, 3)   # siyah outline
+                    # 2D outline wall
+                    pygame.draw.rect(screen, WALL_COLOR, rect)      # fill
+                    pygame.draw.rect(screen, (0, 0, 0), rect, 3)   # black outline
                 else:
                     pygame.draw.rect(screen, FLOOR_COLOR, rect)
 
@@ -271,25 +303,29 @@ def run_level(level_index, screen, clock, font, player_img, best_times):
                     e_rect = rect.inflate(-6, -6)
                     pygame.draw.rect(screen, EXIT_COLOR, e_rect, border_radius=4)
 
-        # Oyuncu
-        screen.blit(player_img, (player_x*TILE_SIZE, player_y*TILE_SIZE))
+        # Player
+        screen.blit(player_img, (player_x * TILE_SIZE, player_y * TILE_SIZE))
 
         # HUD
         elapsed = int(time.time() - start_time)
-        screen.blit(font.render(f"Time: {elapsed}s", True, TEXT_COLOR), (10, 5))
-        screen.blit(font.render(f"Level: {level_index+1}", True, TEXT_COLOR), (10, 30))
+        screen.blit(font.render(f"Time: {elapsed}s", True, TEXT_COLOR),
+                    (10, 5))
+        screen.blit(font.render(f"Level: {level_index + 1}", True, TEXT_COLOR),
+                    (10, 30))
 
-        # Best time bilgisi
+        # Best time info
         best_txt = "--" if prev_best is None else f"{prev_best}s"
-        screen.blit(font.render(f"Best: {best_txt}", True, TEXT_COLOR), (10, 55))
+        screen.blit(font.render(f"Best: {best_txt}", True, TEXT_COLOR),
+                    (10, 55))
 
-        # Yeni rekor mesajı
+        # New record message
         if new_record:
             msg = msg_font.render("New Best Time! 🎉", True, EXIT_COLOR)
-            mx = (width*TILE_SIZE - msg.get_width()) // 2
+            mx = (width * TILE_SIZE - msg.get_width()) // 2
             screen.blit(msg, (mx, 10))
 
         pygame.display.flip()
+
 
 # ---------------------------
 # MAIN
@@ -299,7 +335,11 @@ def main():
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("arial", 22)
 
-    # !! BURASI ÖNEMLİ: display_set_mode DEĞİL display.set_mode !!
+    # Ask player name ONCE
+    player_name = input("Enter your player name: ").strip()
+    if not player_name:
+        player_name = "Player"
+
     screen = pygame.display.set_mode((640, 480))
 
     sprites = load_player_sprites()
@@ -313,28 +353,40 @@ def main():
     player_img = sprites[chosen]
 
     current_level = 0
+    total_time = 0  # sum of all finished level times in this run
+
     while True:
         if current_level >= len(LEVELS):
+            # All levels finished
             screen.fill(BG_COLOR)
             msg = pygame.font.SysFont("arial", 28).render(
-                "All levels finished! 🎉", True, TEXT_COLOR)
+                "All levels finished! 🎉", True, TEXT_COLOR
+            )
             screen.blit(msg, (50, 50))
             pygame.display.flip()
             pygame.time.wait(2000)
+
+            # Send TOTAL time to n8n scoreboard
+            send_score_to_server(player_name, total_time)
             break
 
-        result = run_level(current_level, screen, clock, font, player_img, best_times)
+        result, level_elapsed = run_level(
+            current_level, screen, clock, font, player_img, best_times
+        )
 
         if result == "next":
+            total_time += level_elapsed
             current_level += 1
         elif result == "restart":
-            # aynı level tekrar
+            # replay the same level, do not change total_time
             continue
         else:
+            # quit
             break
 
     pygame.quit()
     sys.exit()
+
 
 if __name__ == "__main__":
     main()
